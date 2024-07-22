@@ -1,5 +1,40 @@
-resource "aws_security_group" "himanshu" {
-  name        = "himanshu"
+provider "aws" {
+  region     = "us-east-1"
+  access_key = "your access key"
+  secret_key = "your secret key"
+
+}
+
+
+
+resource "aws_vpc" "aniket-vpc" {
+  cidr_block = "10.0.0.0/16"
+}
+
+
+resource "aws_subnet" "public-subnet" {
+  vpc_id     = aws_vpc.aniket-vpc.id
+  cidr_block = "10.0.0.0/24"
+
+  tags = {
+    Name = "Public-subnet"
+  }
+}
+
+
+resource "aws_subnet" "private-subnet" {
+  vpc_id     = aws_vpc.aniket-vpc.id
+  cidr_block = "10.0.1.0/24"
+
+  tags = {
+    Name = "Private-subnet"
+  }
+
+}
+
+resource "aws_security_group" "aniket" {
+  name        = "aniket"
+  vpc_id      = aws_vpc.aniket-vpc.id
   description = "allow ssh and http"
 
   ingress {
@@ -16,24 +51,110 @@ resource "aws_security_group" "himanshu" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-
   egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+
 }
 
 
-resource "aws_instance" "terraserver" {
-  ami             = "ami-0e97ea97a2f374e3d"
-  instance_type   = "t2.micro"
-  key_name        = "id_rsa"
-  security_groups = ["${aws_security_group.himanshu.name}"]
+resource "aws_internet_gateway" "aniket-igw" {
+  vpc_id = aws_vpc.aniket-vpc.id
 
   tags = {
-    Name = "terra-server"
-
+    Name = "aniket-igw"
   }
+}
+
+
+
+
+resource "aws_route_table" "public-rt" {
+  vpc_id = aws_vpc.aniket-vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.aniket-igw.id
+  }
+
+
+  tags = {
+    Name = "public-rt"
+  }
+}
+
+
+resource "aws_route_table_association" "public-asso" {
+  subnet_id      = aws_subnet.public-subnet.id
+  route_table_id = aws_route_table.public-rt.id
+}
+
+
+
+resource "aws_instance" "web-server" {
+  ami             = "ami-0e97ea97a2f374e3d"
+  subnet_id       = aws_subnet.public-subnet.id
+  instance_type   = "t2.micro"
+  security_groups = ["${aws_security_group.aniket.id}"]
+  key_name        = "north-key"
+  tags = {
+    Name = "web-server"
+  }
+
+}
+
+
+
+resource "aws_eip" "aniket-eip" {
+  instance = aws_instance.web-server.id
+}
+
+resource "aws_instance" "dev-server" {
+  ami             = "ami-0e97ea97a2f374e3d"
+  subnet_id       = aws_subnet.private-subnet.id
+  instance_type   = "t2.micro"
+  security_groups = ["${aws_security_group.aniket.id}"]
+  key_name        = "north-key"
+  tags = {
+    Name = "dev-server"
+  }
+
+}
+
+
+
+resource "aws_eip" "nat-eip" {
+}
+
+
+resource "aws_nat_gateway" "my-ngw" {
+  allocation_id = aws_eip.nat-eip.id
+  subnet_id     = aws_subnet.public-subnet.id
+}
+
+
+
+resource "aws_route_table" "private-rt" {
+  vpc_id = aws_vpc.aniket-vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_nat_gateway.my-ngw.id
+  }
+
+
+  tags = {
+    Name = "private-rt"
+  }
+}
+
+
+
+resource "aws_route_table_association" "private-asso" {
+  subnet_id      = aws_subnet.private-subnet.id
+  route_table_id = aws_route_table.private-rt.id
 }
